@@ -943,18 +943,35 @@ function fmtTarikhCal(d){
   return d.getDate()+' '+bulan[d.getMonth()]+' '+d.getFullYear();
 }
 
-// ─── CALENDAR VIEW ────────────────────────────────────
+// ══════════════════════════════════════════════════════
+// FUNGSI KALENDAR DIPERBAIKI (TANPA MENGUBAH STRUKTUR)
+// ══════════════════════════════════════════════════════
 function buildCalData(){
   // Guna lulusData dari Apps Script kalau ada, fallback ke requests (mock)
   const sumber = (lulusData && lulusData.length > 0) ? lulusData : requests;
+  
+  // Tapis data: hanya kenderaan yang dipilih & bukan status 'rejected'
   const bookedRanges = sumber
-    .filter(r=>r.kenderaan===calKenderaan && r.status!=='rejected')
-    .map(r=>({start:parseTarikh(r.tarikhPergi),end:parseTarikh(r.tarikhBalik),id:r.id||r.nama,pemohon:r.pemohon||r.nama}));
+    .filter(r => r.kenderaan === calKenderaan && r.status !== 'rejected')
+    .map(r => ({
+      start: parseTarikh(r.tarikhPergi), 
+      end: parseTarikh(r.tarikhBalik), 
+      id: r.id || r.nama, 
+      pemohon: r.pemohon || r.nama
+    }))
+    .filter(b => b.start && b.end); // Pastikan tarikh sah
+
   const firstDay = new Date(calTahun, calBulan, 1);
   const lastDay  = new Date(calTahun, calBulan+1, 0);
   const startDow = firstDay.getDay();
-  function isBooked(d){return bookedRanges.some(b=>b.start&&b.end&&d>=b.start&&d<=b.end);}
-  function getInfos(d){return bookedRanges.filter(b=>b.start&&b.end&&d>=b.start&&d<=b.end);}
+  
+  function isBooked(d){
+    return bookedRanges.some(b => d >= b.start && d <= b.end);
+  }
+  function getInfos(d){
+    return bookedRanges.filter(b => d >= b.start && d <= b.end);
+  }
+  
   let cells='';
   for(let i=0;i<startDow;i++) cells+='<div class="cal-cell cal-empty"></div>';
   for(let d=1;d<=lastDay.getDate();d++){
@@ -972,6 +989,7 @@ function buildCalData(){
   return {cells, bookedRanges};
 }
 
+// ─── CALENDAR VIEW (STRUKTUR ASAL DIKEKALKAN) ───────────────────
 function renderCalendar(){
   const bulanNama=['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
   const hari=['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'];
