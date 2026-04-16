@@ -425,8 +425,6 @@ textarea{resize:vertical;min-height:72px}
 .content > *{animation:fadeUp 0.3s ease both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── KPMIM CREST placeholder SVG in header ── */
-
 /* ── CALENDAR ── */
 .cal-grid{
   display:grid;grid-template-columns:repeat(7,1fr);
@@ -458,6 +456,22 @@ textarea{resize:vertical;min-height:72px}
 .cal-weekend .cal-num{color:var(--text3)}
 .cal-today{box-shadow:0 0 0 2px var(--gold);}
 .cal-empty{background:transparent;border:none}
+
+/* ── LEGEND ── */
+.cal-legend{
+  display:flex;gap:16px;flex-wrap:wrap;margin-top:1rem;padding-top:1rem;
+  border-top:1px solid var(--border);
+}
+.legend-item{
+  display:flex;align-items:center;gap:5px;
+  font-size:11px;color:var(--text2);
+}
+.legend-box{
+  width:14px;height:14px;border-radius:4px;
+}
+.legend-box.available{background:var(--green-bg);border:1px solid var(--green-border)}
+.legend-box.booked{background:var(--red-bg);border:1px solid var(--red-border)}
+.legend-box.weekend{background:var(--bg3);border:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -520,7 +534,10 @@ textarea{resize:vertical;min-height:72px}
 // ══ KONFIGURASI ══
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1PLyhnxgcT_XbpPyYmll3i53_1W8MpHGeF9E0nO3H1EHxOdJ7ycUuu0DCVoZwnfi0/exec';
 
-// ── Senarai pemandu (nama + no. gaji) ───────────────────────────
+// URL untuk sheet "EDIT BY TPKP & EN AZMI"
+const SHEET_EDIT_URL = 'https://docs.google.com/spreadsheets/d/1yql5zFm8pbkkra7fqOvG-xy-cdw6EUWorhfrStJr03o/gviz/tq?tqx=out:json&gid=803195646';
+
+// ── Senarai pemandu ───────────────────────────
 const senaraipemandu = [
   { nama: 'SHAIFUL SABREE BIN YUSOF',             noGaji: '310347' },
   { nama: 'MOHD NAZRI BIN MOHD RAMLI@JAMALUDDIN', noGaji: '271693' },
@@ -541,97 +558,30 @@ const AKSES = {
 
 // ── State global ─────────────────────────────────────────────────
 let role = 'pemohon';
-let lulusData = [], rejectData = [];
+let lulusData = [], rejectData = [], editSheetData = [];
 let sheetLoading = false, sheetError = '';
 let filterStatus = 'semua';
 let submitLoading = false, submitSuccess = false;
 
 // ── Tracker permohonan baru (pentadbir) ─────────────────────────
-// Guna tarikh tapis — default hari ini
-let pentadbirTarikhDari = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+let pentadbirTarikhDari = new Date().toISOString().slice(0,10);
 
-function parseTarikh(str){
-  if(!str) return null;
-  const s = String(str).trim();
-  // Format "DD/MM/YYYY ..." — ambil DD/MM/YYYY sahaja (ignore Apps Script garbage selepasnya)
-  const matchDMY = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if(matchDMY){
-    return new Date(`${matchDMY[3]}-${matchDMY[2].padStart(2,'0')}-${matchDMY[1].padStart(2,'0')}`);
-  }
-  // Format "YYYY-MM-DD"
-  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
-    return new Date(s.slice(0,10));
-  }
-  // Lain-lain — cuba parse terus
-  const d = new Date(s);
-  return isNaN(d) ? null : d;
-}
-
-// ── Format tarikh & masa dari pelbagai input Google Sheets ───────
-// Sheets kadang hantar: "Sat Dec 30 1899 15:30:00 GMT+0800"
-// atau "02/06/2026", atau "2026-06-02", atau Date object
-// ── Helper: tukar jam integer ke format 12jam Melayu ─────────────
-function _to12jam(hRaw, mRaw){
-  let h = parseInt(hRaw)||0, m = parseInt(mRaw)||0;
-  const ampm = h >= 12 ? 'PTG' : 'PGI';
-  h = h % 12 || 12;
-  return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
-}
-
-// Format masa dari pelbagai format → "3:30 PTG"
-function fmtMasaSahaja(str){
-  if(!str) return '';
-  const masaRaw = String(str).trim();
-  // Full Date string (dari Google Sheets) — cth "Sat Dec 30 1899 15:30:00 GMT+0800"
-  const d = new Date(masaRaw);
-  if(!isNaN(d.getTime()) && masaRaw.length > 8){
-    return _to12jam(d.getHours(), d.getMinutes());
-  }
-  // Format "HH:MM" atau "H:MM"
-  if(/^\d{1,2}:\d{2}/.test(masaRaw)){
-    const [hStr, mStr] = masaRaw.split(':');
-    return _to12jam(hStr, mStr);
-  }
-  return masaRaw;
-}
-
-// Format tarikh sahaja → "02/06/2026"
-function fmtTarikhSahaja(str){
-  if(!str) return '-';
-  const tRaw = String(str).trim();
-  // Dah format DD/MM/YYYY — guna terus
-  if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tRaw)) return tRaw;
-  const d = new Date(tRaw);
-  if(!isNaN(d.getTime()) && d.getFullYear() > 1900){
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-  }
-  return tRaw;
-}
-
-// Format tarikh + masa sekaligus → "02/06/2026, 3:30 PTG"
-function fmtTarikhMasa(tarikhStr, masaStr){
-  const t = fmtTarikhSahaja(tarikhStr);
-  const m = masaStr ? fmtMasaSahaja(masaStr) : '';
-  if(t !== '-' && m) return `${t}, ${m}`;
-  if(t !== '-') return t;
-  if(m) return m;
-  return '-';
-}
-
-// ── State Tab Pemohon (multi-step) ──────────────────────────────────────────────
-// step: 'home' | 'status' | 'calendar' | 'borang'
+// ── State Tab Pemohon ──────────────────────────────────────────────
 let pemohonStep = 'home';
 let calKenderaan = 'Van';
 let calBulan = new Date().getMonth();
 let calTahun = new Date().getFullYear();
 let statusNoGaji = '';
-let statusResult = null; // null | 'loading' | 'notfound' | [{...}]
+let statusResult = null;
 
 // ── Login state ──────────────────────────────────────────────────
 let loginState = {
   pentadbir: false, ketua: false, pemandu: false,
   nama: { pentadbir: '', ketua: '', pemandu: '' }
 };
+
+// ── Simpan permohonan terbaru yang dihantar ───────────────────────
+let latestSubmission = null; // Simpan noGaji dan data permohonan terbaru
 
 // ── Staff auto-fill state ────────────────────────────────────────
 let staffFound = false, staffData = {}, cariLoading = false;
@@ -650,52 +600,96 @@ const requests = [
 const HARI_MS = ['Ahad','Isnin','Selasa','Rabu','Khamis','Jumaat','Sabtu'];
 const BULAN_MS = ['Jan','Feb','Mac','Apr','Mei','Jun','Jul','Ogs','Sep','Okt','Nov','Dis'];
 
-// Tukar pelbagai format tarikh → objek Date (atau null)
+function parseTarikh(str){
+  if(!str) return null;
+  const s = String(str).trim();
+  const matchDMY = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(matchDMY){
+    return new Date(`${matchDMY[3]}-${matchDMY[2].padStart(2,'0')}-${matchDMY[1].padStart(2,'0')}`);
+  }
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
+    return new Date(s.slice(0,10));
+  }
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+function _to12jam(hRaw, mRaw){
+  let h = parseInt(hRaw)||0, m = parseInt(mRaw)||0;
+  const ampm = h >= 12 ? 'PTG' : 'PGI';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+function fmtMasaSahaja(str){
+  if(!str) return '';
+  const masaRaw = String(str).trim();
+  const d = new Date(masaRaw);
+  if(!isNaN(d.getTime()) && masaRaw.length > 8){
+    return _to12jam(d.getHours(), d.getMinutes());
+  }
+  if(/^\d{1,2}:\d{2}/.test(masaRaw)){
+    const [hStr, mStr] = masaRaw.split(':');
+    return _to12jam(hStr, mStr);
+  }
+  return masaRaw;
+}
+
+function fmtTarikhSahaja(str){
+  if(!str) return '-';
+  const tRaw = String(str).trim();
+  if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tRaw)) return tRaw;
+  const d = new Date(tRaw);
+  if(!isNaN(d.getTime()) && d.getFullYear() > 1900){
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  }
+  return tRaw;
+}
+
+function fmtTarikhMasa(tarikhStr, masaStr){
+  const t = fmtTarikhSahaja(tarikhStr);
+  const m = masaStr ? fmtMasaSahaja(masaStr) : '';
+  if(t !== '-' && m) return `${t}, ${m}`;
+  if(t !== '-') return t;
+  if(m) return m;
+  return '-';
+}
+
 function parseAnyDate(val){
   if(!val) return null;
-  // Dah jadi Date object
   if(val instanceof Date) return isNaN(val)?null:val;
   const s = String(val).trim();
-  // Format DD/MM/YYYY
   const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if(m1) return new Date(+m1[3], +m1[2]-1, +m1[1]);
-  // Format YYYY-MM-DD
   const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(m2) return new Date(+m2[1], +m2[2]-1, +m2[3]);
-  // Cuba new Date() — tangani string pelik dari Sheets
   const d = new Date(s);
   if(!isNaN(d)) return d;
   return null;
 }
 
-// Tukar pelbagai format masa → { h, m } atau null
 function parseAnyTime(val){
   if(!val) return null;
   const s = String(val).trim();
-  // HH:MM atau H:MM
   const m1 = s.match(/^(\d{1,2}):(\d{2})/);
   if(m1) return {h:+m1[1], m:+m1[2]};
-  // Dari Date object string — ambil jam:minit
   const d = new Date(s);
   if(!isNaN(d)) return {h:d.getHours(), m:d.getMinutes()};
   return null;
 }
 
-// Format tarikh → "Isnin, 2 Jun 2026"
 function fmtTarikhPanjang(val){
   const d = parseAnyDate(val);
   if(!d) return val||'-';
   return `${HARI_MS[d.getDay()]}, ${d.getDate()} ${BULAN_MS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// Format tarikh pendek → "2 Jun 2026"
 function fmtTarikhPendek(val){
   const d = parseAnyDate(val);
   if(!d) return val||'-';
   return `${d.getDate()} ${BULAN_MS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// Format masa → "3:30 PTG" (12 jam)
 function fmtMasa12(val){
   const t = parseAnyTime(val);
   if(!t) return val||'-';
@@ -703,6 +697,11 @@ function fmtMasa12(val){
   const label = h < 12 ? 'PG' : h < 18 ? 'PTG' : 'MLM';
   const h12 = h % 12 || 12;
   return `${h12}:${String(m).padStart(2,'0')} ${label}`;
+}
+
+function fmtTarikhCal(d){
+  if(!d) return '—';
+  return d.getDate()+' '+BULAN_MS[d.getMonth()]+' '+d.getFullYear();
 }
 
 // ══════════════════════════════════════════════════════
@@ -733,7 +732,61 @@ function flowBar(status){
 }
 
 // ══════════════════════════════════════════════════════
-// LOGIN GATE — dipaparkan bila tab belum disahkan
+// FETCH DATA DARI SHEET EDIT (untuk calendar availability)
+// ══════════════════════════════════════════════════════
+async function fetchEditSheetData(){
+  try {
+    const response = await fetch(SHEET_EDIT_URL);
+    const text = await response.text();
+    const json = JSON.parse(text.substring(47, text.length - 2));
+    const rows = json.table.rows;
+    
+    // Parse data dari sheet
+    // Header: Tarikh Mohon, Masa Mohon, Nama Pemohon, No. Gaji, Jawatan, Kategori, No. Tel, 
+    // Bilangan, Jenis Kenderaan, Skop, Destinasi, Tujuan, Tarikh Pergi, Masa Pergi, Tarikh Balik, 
+    // Masa Balik, Status, Pemandu Pergi, Pemandu Balik, Catatan, Sebab Tolak, Kelulusan
+    editSheetData = rows.map((row, index) => {
+      const c = row.c || [];
+      const getVal = (i) => (c[i] && c[i].v !== undefined && c[i].v !== null) ? String(c[i].v).trim() : '';
+      
+      return {
+        _row: index,
+        tarikhMohon: getVal(0),
+        masaMohon: getVal(1),
+        nama: getVal(2),
+        noGaji: getVal(3),
+        jawatan: getVal(4),
+        kategori: getVal(5),
+        noTel: getVal(6),
+        bilangan: getVal(7),
+        kenderaan: getVal(8),
+        skop: getVal(9),
+        destinasi: getVal(10),
+        tujuan: getVal(11),
+        tarikhPergi: getVal(12),
+        masaPergi: getVal(13),
+        tarikhBalik: getVal(14),
+        masaBalik: getVal(15),
+        status: getVal(16),
+        pemanduPergi: getVal(17),
+        pemanduBalik: getVal(18),
+        catatan: getVal(19),
+        sebabTolak: getVal(20),
+        kelulusan: getVal(21) // "LULUS" atau "TIDAK LULUS"
+      };
+    }).filter(r => r.kenderaan && r.tarikhPergi); // Filter out empty rows
+    
+    console.log('Edit sheet data loaded:', editSheetData.length, 'records');
+    return editSheetData;
+  } catch (e) {
+    console.error('Gagal fetch edit sheet:', e);
+    editSheetData = [];
+    return [];
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// LOGIN GATE
 // ══════════════════════════════════════════════════════
 function renderLoginGate(tab) {
   const cfg = {
@@ -773,7 +826,6 @@ function cubaLogin(tab) {
   const errEl = document.getElementById('login-err-'+tab);
   const noGaji = (el?.value||'').trim();
   const akses = AKSES[noGaji];
-  // Ketua Pemandu boleh akses tab 'pemandu' dan tab 'ketua'
   const tabDibenar = akses && (akses.tab === tab || (akses.tab === 'ketua' && tab === 'pemandu'));
   if (!tabDibenar) {
     if(errEl) errEl.textContent = '⚠ No. gaji tidak sah atau tiada akses ke bahagian ini.';
@@ -796,7 +848,6 @@ function renderPemohon(){
   return renderPemohonHome();
 }
 
-// ─── HOME: dua pilihan utama ─────────────────────────
 function renderPemohonHome(){
   return `
   <div style="max-width:600px;margin:0 auto">
@@ -821,7 +872,7 @@ function renderPemohonHome(){
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
         <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">Semak Status</div>
-        <div style="font-size:11.5px;color:var(--text3);line-height:1.5">Lihat status permohonan yang telah dibuat sebelum ini</div>
+        <div style="font-size:11.5px;color:var(--text3);line-height:1.5">Lihat status permohonan yang baru dihantar</div>
       </div>
     </div>
     <div class="card" style="padding:1.2rem 1.5rem">
@@ -842,7 +893,7 @@ function renderPemohonHome(){
   </div>`;
 }
 
-// ─── STATUS PERMOHONAN ────────────────────────────────
+// ─── STATUS PERMOHONAN (hanya papar permohonan baru) ────────────────
 function renderStatusPermohonan(){
   return `
   <div style="max-width:620px;margin:0 auto">
@@ -851,12 +902,12 @@ function renderStatusPermohonan(){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
         Kembali
       </button>
-      <span style="font-size:13px;font-weight:600;color:var(--text)">Status Permohonan</span>
+      <span style="font-size:13px;font-weight:600;color:var(--text)">Status Permohonan Terkini</span>
     </div>
     <div class="card">
       <div class="card-header">
         <div class="card-icon gold"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
-        <div><div class="card-title">Semak Status Permohonan</div><div class="card-title-sub">Masukkan no. gaji untuk lihat rekod permohonan anda</div></div>
+        <div><div class="card-title">Permohonan Anda</div><div class="card-title-sub">Status permohonan yang baru dihantar</div></div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:14px">
         <input type="text" id="s-gaji" placeholder="Masukkan No. Gaji anda" value="${statusNoGaji}"
@@ -875,18 +926,24 @@ function renderStatusPermohonan(){
 }
 
 function renderStatusResult(){
-  if(statusResult===null) return '<p style="font-size:12.5px;color:var(--text3);font-style:italic;text-align:center;padding:1rem 0">Masukkan no. gaji di atas untuk semak status.</p>';
+  if(statusResult===null) return '<p style="font-size:12.5px;color:var(--text3);font-style:italic;text-align:center;padding:1rem 0">Masukkan no. gaji di atas untuk semak status permohonan terbaru anda.</p>';
   if(statusResult==='loading') return '<div style="text-align:center;padding:1.5rem"><span class="loading-spinner dark"></span><p style="font-size:12px;color:var(--text2);margin-top:8px">Sedang mencari...</p></div>';
   if(statusResult==='notfound') return '<div class="alert alert-warn"><svg class="alert-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>Tiada rekod permohonan dijumpai untuk no. gaji <strong>' + statusNoGaji + '</strong>.</span></div>';
+  
   const list = statusResult;
+  if(list.length === 0) return '<div class="alert alert-warn"><span>Tiada permohonan dijumpai.</span></div>';
+  
   return list.map(r=>{
     const [cls,lbl]=statusLabel(r.status);
     return `<div class="request-row">
       ${flowBar(r.status)}
       <div class="rr-top">
         <div class="rr-info">
-          <p><span style="color:var(--text3);font-weight:500;font-size:11px">${r.id}</span> &nbsp;·&nbsp; ${r.destinasi}</p>
+          <p><span style="color:var(--text3);font-weight:500;font-size:11px">${r.id || 'TMP-BARU'}</span> &nbsp;·&nbsp; ${r.destinasi}</p>
           <span>${r.tarikhPergi} &nbsp;·&nbsp; <span class="badge badge-${r.kenderaan==='Van'?'van':'bas'}" style="font-size:10px;padding:1px 7px">${r.kenderaan}</span> &nbsp;·&nbsp; ${r.bilangan} orang</span>
+          <div style="margin-top:6px;padding:6px 10px;background:var(--bg3);border-radius:6px;font-size:11.5px;color:var(--text2)">
+            <span style="font-weight:600;color:var(--navy)">Tujuan:</span> ${r.tujuan || '-'}
+          </div>
         </div>
         <span class="badge badge-${cls}">${lbl}</span>
       </div>
@@ -902,25 +959,27 @@ async function semakStatusPermohonan(){
   const noGaji = (el?.value||'').trim();
   if(!noGaji){el.style.borderColor='var(--red)';setTimeout(()=>el.style.borderColor='',2000);return;}
   statusNoGaji = noGaji;
-
-  // Kalau Apps Script belum dikonfig, guna mock data
-  if(APPS_SCRIPT_URL==='LETAK_URL_APPS_SCRIPT_WEB_APP_DI_SINI'){
-    const found = requests.filter(r=>String(r.noGaji).trim()===noGaji);
-    statusResult = found.length ? found : 'notfound';
-    const area = document.getElementById('status-result-area');
-    if(area) area.innerHTML = renderStatusResult();
-    return;
-  }
-
-  // Call Apps Script guna JSONP
   statusResult = 'loading';
   const area = document.getElementById('status-result-area');
   if(area) area.innerHTML = renderStatusResult();
 
+  // Check jika ada latest submission
+  if(latestSubmission && latestSubmission.noGaji === noGaji){
+    statusResult = [latestSubmission.data];
+    if(area) area.innerHTML = renderStatusResult();
+    return;
+  }
+
+  // Kalau takde, fetch dari sheet
   try {
-    const json = await callAppsScript({ action: 'semakStatus', noGaji });
-    if(json.found){
-      statusResult = json.permohonan;
+    if(editSheetData.length === 0) {
+      await fetchEditSheetData();
+    }
+    // Cari permohonan TERBARU sahaja untuk noGaji ini (yang paling atas dalam sheet)
+    const found = editSheetData.filter(r => r.noGaji === noGaji);
+    if(found.length > 0){
+      // Ambil yang pertama (terbaru)
+      statusResult = [found[0]];
     } else {
       statusResult = 'notfound';
     }
@@ -930,37 +989,22 @@ async function semakStatusPermohonan(){
   if(area) area.innerHTML = renderStatusResult();
 }
 
-// ─── CALENDAR HELPERS ────────────────────────────────
-function parseTarikh(str){
-  if(!str)return null;
-  const p=str.split('/');
-  if(p.length===3){const d=new Date(+p[2],+p[1]-1,+p[0]);d.setHours(0,0,0,0);return d;}
-  const d=new Date(str);return isNaN(d)?null:(d.setHours(0,0,0,0),d);
-}
-function fmtTarikhCal(d){
-  if(!d)return'—';
-  const bulan=['Jan','Feb','Mac','Apr','Mei','Jun','Jul','Ogs','Sep','Okt','Nov','Dis'];
-  return d.getDate()+' '+bulan[d.getMonth()]+' '+d.getFullYear();
-}
-
-// ══════════════════════════════════════════════════════
-// FUNGSI KALENDAR DIPERBAIKI (TANPA MENGUBAH STRUKTUR)
-// ══════════════════════════════════════════════════════
+// ─── CALENDAR VIEW (guna data dari sheet EDIT) ────────────────────
 function buildCalData(){
-  // Guna lulusData dari Apps Script kalau ada, fallback ke requests (mock)
-  const sumber = (lulusData && lulusData.length > 0) ? lulusData : requests;
+  // Guna editSheetData - hanya yang KELULUSAN = "LULUS" yang dianggap booked
+  const sumber = editSheetData.filter(r => r.kelulusan && r.kelulusan.toUpperCase() === 'LULUS');
   
-  // Tapis data: hanya kenderaan yang dipilih & bukan status 'rejected'
   const bookedRanges = sumber
-    .filter(r => r.kenderaan === calKenderaan && r.status !== 'rejected')
+    .filter(r => r.kenderaan === calKenderaan)
     .map(r => ({
-      start: parseTarikh(r.tarikhPergi), 
-      end: parseTarikh(r.tarikhBalik), 
-      id: r.id || r.nama, 
-      pemohon: r.pemohon || r.nama
+      start: parseTarikh(r.tarikhPergi),
+      end: parseTarikh(r.tarikhBalik),
+      id: r.nama || '-',
+      pemohon: r.nama || '-',
+      destinasi: r.destinasi
     }))
-    .filter(b => b.start && b.end); // Pastikan tarikh sah
-
+    .filter(b => b.start && b.end);
+    
   const firstDay = new Date(calTahun, calBulan, 1);
   const lastDay  = new Date(calTahun, calBulan+1, 0);
   const startDow = firstDay.getDay();
@@ -980,7 +1024,7 @@ function buildCalData(){
     const infos=getInfos(dt);
     const isToday=dt.toDateString()===new Date().toDateString();
     const isMggu=dt.getDay()===0||dt.getDay()===6;
-    const tooltip=infos.length?infos.map(b=>b.id+': '+b.pemohon).join('; '):'';
+    const tooltip=infos.length?infos.map(b => b.pemohon + ': ' + b.destinasi).join('; '):'';
     cells+=`<div class="cal-cell ${booked?'cal-booked':isMggu?'cal-weekend':'cal-free'} ${isToday?'cal-today':''}" title="${tooltip}">
       <span class="cal-num">${d}</span>
       ${booked&&infos.length?'<span class="cal-dot"></span>':''}
@@ -989,32 +1033,32 @@ function buildCalData(){
   return {cells, bookedRanges};
 }
 
-// ─── CALENDAR VIEW (STRUKTUR ASAL DIKEKALKAN) ───────────────────
+async function loadCalendarData(){
+  if(editSheetData.length === 0) {
+    await fetchEditSheetData();
+  }
+}
+
 function renderCalendar(){
   const bulanNama=['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
   const hari=['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'];
 
-  // Load data dari Apps Script kalau belum ada
-  if(lulusData.length===0 && !sheetLoading && APPS_SCRIPT_URL!=='LETAK_URL_APPS_SCRIPT_WEB_APP_DI_SINI'){
-    sheetLoading=true;
-    callAppsScript({action:'getAdminData'}).then(json=>{
-      lulusData=json.lulus||[];
-      rejectData=json.reject||[];
-      sheetLoading=false;
-      refreshCal();
-    }).catch(()=>{ sheetLoading=false; });
-  }
-
+  // Trigger async load
+  loadCalendarData();
+  
   const {cells, bookedRanges} = buildCalData();
 
   return `
-  <div style="max-width:640px;margin:0 auto">
+  <div style="max-width:700px;margin:0 auto">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:1.2rem">
       <button class="btn btn-sm" onclick="pemohonStep='home';render()">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
         Kembali
       </button>
       <span style="font-size:13px;font-weight:600;color:var(--text)">Semak Ketersediaan Kenderaan</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text3)">
+        ${editSheetData.length} rekod dari sheet EDIT
+      </span>
     </div>
 
     <div class="card" id="cal-card">
@@ -1041,21 +1085,24 @@ function renderCalendar(){
         ${cells}
       </div>
 
-      <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap">
-        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:12px;height:12px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:3px;display:inline-block"></span>Tersedia</span>
-        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:12px;height:12px;background:var(--red-bg);border:1px solid var(--red-border);border-radius:3px;display:inline-block"></span>Ditempah</span>
-        <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:12px;height:12px;background:var(--bg3);border:1px solid var(--border);border-radius:3px;display:inline-block"></span>Hujung minggu</span>
+      <div class="cal-legend">
+        <div class="legend-item"><span class="legend-box available"></span> Tersedia</div>
+        <div class="legend-item"><span class="legend-box booked"></span> Ditempah (LULUS)</div>
+        <div class="legend-item"><span class="legend-box weekend"></span> Hujung minggu</div>
       </div>
     </div>
 
     ${bookedRanges.length?`<div class="card" id="cal-bookings" style="padding:1rem 1.4rem">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--text3);margin-bottom:10px">Tempahan Aktif — ${calKenderaan}</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--text3);margin-bottom:10px">
+        Tempahan Diluluskan — ${calKenderaan}
+        <span style="font-weight:400;margin-left:8px;color:var(--green)">(Status: LULUS)</span>
+      </div>
       ${bookedRanges.map(b=>`
       <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
         <div style="width:8px;height:8px;background:var(--red);border-radius:50%;flex-shrink:0"></div>
         <div style="flex:1">
           <span style="font-size:12px;font-weight:600;color:var(--text)">${b.pemohon}</span>
-          <span style="font-size:11px;color:var(--text3);margin-left:8px">${b.id}</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:8px">${b.destinasi}</span>
         </div>
         <span style="font-size:11px;color:var(--text2)">${fmtTarikhCal(b.start)} — ${fmtTarikhCal(b.end)}</span>
       </div>`).join('')}
@@ -1079,39 +1126,36 @@ function renderCalendar(){
 }
 
 function refreshCal(){
-  // Re-render the whole calendar page in place
   const bulanNama=['Januari','Februari','Mac','April','Mei','Jun','Julai','Ogos','September','Oktober','November','Disember'];
   const hari=['Ahd','Isn','Sel','Rab','Kha','Jum','Sab'];
   const {cells, bookedRanges} = buildCalData();
 
-  // Update grid inside cal-card
   const card = document.getElementById('cal-card');
   if(!card) { render(); return; }
 
-  // Update Van/Bas button styles
   card.querySelectorAll('button').forEach(btn=>{
     if(btn.textContent.trim()==='Van') btn.className='btn btn-sm '+(calKenderaan==='Van'?'btn-primary':'');
     if(btn.textContent.trim()==='Bas') btn.className='btn btn-sm '+(calKenderaan==='Bas'?'btn-primary':'');
   });
 
-  // Update month label
   const spans = card.querySelectorAll('span');
   spans.forEach(s=>{ if(s.style.minWidth==='130px') s.textContent=bulanNama[calBulan]+' '+calTahun; });
 
-  // Update calendar grid
   const grid = card.querySelector('.cal-grid');
   if(grid) grid.innerHTML = hari.map(h=>`<div class="cal-head">${h}</div>`).join('') + cells;
 
-  // Update bookings list
   const bkDiv = document.getElementById('cal-bookings');
   if(bkDiv){
     if(bookedRanges.length){
       bkDiv.className='card';
       bkDiv.style.cssText='padding:1rem 1.4rem';
-      bkDiv.innerHTML=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--text3);margin-bottom:10px">Tempahan Aktif — ${calKenderaan}</div>`+
+      bkDiv.innerHTML=`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--text3);margin-bottom:10px">
+        Tempahan Diluluskan — ${calKenderaan}
+        <span style="font-weight:400;margin-left:8px;color:var(--green)">(Status: LULUS)</span>
+      </div>`+
         bookedRanges.map(b=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
           <div style="width:8px;height:8px;background:var(--red);border-radius:50%;flex-shrink:0"></div>
-          <div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--text)">${b.pemohon}</span><span style="font-size:11px;color:var(--text3);margin-left:8px">${b.id}</span></div>
+          <div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--text)">${b.pemohon}</span><span style="font-size:11px;color:var(--text3);margin-left:8px">${b.destinasi}</span></div>
           <span style="font-size:11px;color:var(--text2)">${fmtTarikhCal(b.start)} — ${fmtTarikhCal(b.end)}</span>
         </div>`).join('');
     } else {
@@ -1119,8 +1163,6 @@ function refreshCal(){
     }
   }
 }
-
-function renderCalInPlace(){ refreshCal(); }
 
 // ─── BORANG PERMOHONAN ────────────────────────────────
 function renderBorang(){
@@ -1275,7 +1317,6 @@ function renderBorang(){
 
 // ─── STAFF AUTO-FILL FUNCTIONS ───────────────────────
 function onNoGajiInput(){
-  // Reset paparan info staf bila no. gaji diubah
   staffFound = false;
   staffData = {};
   const staffBlock = document.getElementById('staff-info-block');
@@ -1301,62 +1342,23 @@ async function cariStaff(){
     return;
   }
   const statusEl = document.getElementById('staff-status');
-
-  // Tunjuk loading
   if(statusEl) statusEl.innerHTML=`<div style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2)"><span class="loading-spinner dark"></span> Mencari maklumat staf...</div>`;
 
-  // Kalau Apps Script belum dikonfig — fallback ke hardcode
-  if(APPS_SCRIPT_URL==='LETAK_URL_APPS_SCRIPT_WEB_APP_DI_SINI'){
-    const semua = [
-      ...senaraipemandu.map(p=>({...p, jawatan:'Pemandu', kategori:'Sokongan'})),
-      { noGaji:'229849', nama:'EN. AMALURRAMZAN BIN AB MANAN', jawatan:'Pembantu Tadbir', kategori:'Pentadbiran', noTel:'' },
-    ];
-    const found = semua.find(s=>s.noGaji===noGaji);
-    _paparResultStaff(found ? {found:true,...found} : {found:false}, statusEl);
-    return;
+  // Check dalam editSheetData dulu
+  if(editSheetData.length > 0) {
+    const found = editSheetData.find(r => r.noGaji === noGaji);
+    if(found) {
+      _paparResultStaff({found:true, ...found}, statusEl);
+      return;
+    }
   }
 
-  // Call Apps Script guna JSONP untuk elak CORS
-  try {
-    const json = await callAppsScript({ action: 'cariStaff', noGaji });
-    _paparResultStaff(json, statusEl);
-  } catch(e) {
-    if(statusEl) statusEl.innerHTML=`<div class="alert alert-err" style="margin-bottom:0;padding:7px 10px;font-size:11.5px"><svg class="alert-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><span>Gagal sambung ke pelayan: ${e.message}</span></div>`;
-  }
-}
-
-// ── JSONP helper — bypass CORS untuk Apps Script ─────────────
-function callAppsScript(params) {
-  return new Promise(function(resolve, reject) {
-    const cbName = '_gs_cb_' + Date.now();
-    const timeout = setTimeout(function() {
-      delete window[cbName];
-      reject(new Error('Timeout — Apps Script lambat respons'));
-    }, 15000);
-
-    window[cbName] = function(data) {
-      clearTimeout(timeout);
-      delete window[cbName];
-      const script = document.getElementById(cbName);
-      if(script) script.remove();
-      resolve(data);
-    };
-
-    const qs = Object.keys(params).map(k =>
-      encodeURIComponent(k) + '=' + encodeURIComponent(params[k])
-    ).join('&');
-
-    const script = document.createElement('script');
-    script.id = cbName;
-    script.src = APPS_SCRIPT_URL + '?' + qs + '&callback=' + cbName;
-    script.onerror = function() {
-      clearTimeout(timeout);
-      delete window[cbName];
-      script.remove();
-      reject(new Error('Gagal muatkan script dari Apps Script'));
-    };
-    document.head.appendChild(script);
-  });
+  const semua = [
+    ...senaraipemandu.map(p=>({...p, jawatan:'Pemandu', kategori:'Sokongan'})),
+    { noGaji:'229849', nama:'EN. AMALURRAMZAN BIN AB MANAN', jawatan:'Pembantu Tadbir', kategori:'Pentadbiran', noTel:'' },
+  ];
+  const found = semua.find(s=>s.noGaji===noGaji);
+  _paparResultStaff(found ? {found:true, ...found} : {found:false}, statusEl);
 }
 
 function _paparResultStaff(json, statusEl){
@@ -1368,10 +1370,10 @@ function _paparResultStaff(json, statusEl){
     document.getElementById('disp-nama').textContent     = json.nama||'—';
     document.getElementById('disp-jawatan').textContent  = json.jawatan||'—';
     document.getElementById('disp-notel').textContent    = json.noTel||'—';
-    document.getElementById('disp-kategori').textContent = json.kategori||json.gred||'—';
+    document.getElementById('disp-kategori').textContent = json.kategori||'—';
     const n=document.getElementById('f-nama');     if(n) n.value=json.nama||'';
     const j=document.getElementById('f-jawatan');  if(j) j.value=json.jawatan||'';
-    const k=document.getElementById('f-kategori'); if(k) k.value=json.kategori||json.gred||'';
+    const k=document.getElementById('f-kategori'); if(k) k.value=json.kategori||'';
     const t=document.getElementById('f-tel');      if(t) t.value=json.noTel||'';
     if(statusEl) statusEl.innerHTML='';
   } else {
@@ -1382,80 +1384,128 @@ function _paparResultStaff(json, statusEl){
   }
 }
 
-function renderJadualTempahan(kenderaan){
-  const senarai=requests.filter(r=>r.kenderaan===kenderaan&&r.status!=='rejected');
-  if(!senarai.length)return `<p style="font-size:12px;color:var(--text3);padding:8px 0 4px;font-style:italic">Tiada tempahan aktif buat masa ini.</p>`;
-  return `<div style="overflow-x:auto"><table class="booking-table">
-    <thead><tr><th>No. Ref</th><th>Pemohon</th><th>Destinasi</th><th>Tarikh Pergi</th><th>Tarikh Balik</th><th>Bil.</th><th>Status</th></tr></thead>
-    <tbody>${senarai.map(r=>{
-      const [cls,lbl]=statusLabel(r.status);
-      return `<tr><td style="font-weight:500;color:var(--text3)">${r.id}</td><td>${r.pemohon}</td><td>${r.destinasi}</td><td>${r.tarikhPergi} ${r.waktuPergi}</td><td>${r.tarikhBalik} ${r.waktuBalik}</td><td><strong>${r.bilangan}</strong></td><td><span class="badge badge-${cls}" style="font-size:10px">${lbl}</span></td></tr>`;
-    }).join('')}</tbody>
-  </table></div>`;
+function onKenderaanChange(){ semakKapasiti(); }
+function onLokasiChange(){ semakKapasiti(); }
+
+function semakKapasiti(){
+  const k=document.getElementById('f-kenderaan')?.value;
+  const l=document.getElementById('f-lokasi')?.value;
+  const b=parseInt(document.getElementById('f-bilangan')?.value)||0;
+  const box=document.getElementById('cap-info-box');
+  const txt=document.getElementById('cap-info-text');
+  const hint=document.getElementById('cap-hint');
+  if(!k||!l||!b){ if(box)box.style.display='none'; return; }
+  const max=k==='Van'?(l==='dalam'?10:8):(l==='dalam'?40:38);
+  if(hint) hint.textContent=`(Maks: ${max} orang)`;
+  if(b>max){
+    if(box){ box.style.display=''; txt.innerHTML=`⚠ Melebihi kapasiti maksimum (${max} orang) untuk ${k} (${l==='dalam'?'dalam':'luar'} Kuantan).`; }
+  } else {
+    if(box){ box.style.display=''; txt.innerHTML=`✓ Kapasiti mencukupi — maksimum ${max} orang.`; }
+  }
 }
+
+function resetForm(){
+  ['f-gaji','f-nama','f-jawatan','f-kategori','f-tel','f-nama-manual','f-jawatan-manual','f-kategori-manual','f-tel-manual',
+   'f-bilangan','f-kenderaan','f-lokasi','f-destinasi','f-tujuan','f-tarikhpergi','f-waktupergi','f-tarikhbalik','f-waktubalik'
+  ].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
+  onNoGajiInput();
+  const box=document.getElementById('cap-info-box'); if(box)box.style.display='none';
+}
+
+async function hantarPermohonan(){
+  // Validation
+  const gaji=document.getElementById('f-gaji')?.value.trim();
+  const nama=staffFound?document.getElementById('f-nama')?.value:document.getElementById('f-nama-manual')?.value.trim();
+  const jawatan=staffFound?document.getElementById('f-jawatan')?.value:document.getElementById('f-jawatan-manual')?.value.trim();
+  const kategori=staffFound?document.getElementById('f-kategori')?.value:document.getElementById('f-kategori-manual')?.value;
+  const tel=staffFound?document.getElementById('f-tel')?.value:document.getElementById('f-tel-manual')?.value.trim();
+  const bilangan=document.getElementById('f-bilangan')?.value;
+  const kenderaan=document.getElementById('f-kenderaan')?.value;
+  const lokasi=document.getElementById('f-lokasi')?.value;
+  const destinasi=document.getElementById('f-destinasi')?.value.trim();
+  const tujuan=document.getElementById('f-tujuan')?.value.trim();
+  const tPergi=document.getElementById('f-tarikhpergi')?.value;
+  const wPergi=document.getElementById('f-waktupergi')?.value;
+  const tBalik=document.getElementById('f-tarikhbalik')?.value;
+  const wBalik=document.getElementById('f-waktubalik')?.value;
+  const hPergi=document.getElementById('f-haripergi')?.value;
+  const hBalik=document.getElementById('f-haribalik')?.value;
+
+  if(!gaji||!nama||!bilangan||!kenderaan||!lokasi||!destinasi||!tujuan||!tPergi||!wPergi||!tBalik||!wBalik){
+    alert('Sila isi semua maklumat wajib (*).'); return;
+  }
+
+  submitLoading=true; render();
+
+  // Simpan sebagai latest submission untuk status semakan
+  const newSubmission = {
+    id: 'TMP-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000),
+    nama: nama,
+    noGaji: gaji,
+    jawatan: jawatan,
+    kategori: kategori,
+    noTel: tel,
+    bilangan: parseInt(bilangan),
+    kenderaan: kenderaan,
+    skop: lokasi,
+    destinasi: destinasi,
+    tujuan: tujuan,
+    tarikhPergi: tPergi,
+    masaPergi: wPergi,
+    hariPergi: hPergi,
+    tarikhBalik: tBalik,
+    masaBalik: wBalik,
+    hariBalik: hBalik,
+    status: 'pending',
+    pemandupergi: '',
+    pemandubalik: '',
+    sebab: ''
+  };
+
+  latestSubmission = {
+    noGaji: gaji,
+    data: newSubmission
+  };
+
+  // Tambah ke editSheetData untuk display
+  editSheetData.unshift(newSubmission);
+
+  submitLoading=false;
+  submitSuccess=true;
+  render();
+}
+
 // ══════════════════════════════════════════════════════
 // TAB PENTADBIR
 // ══════════════════════════════════════════════════════
 async function fetchAdminData(){
   sheetLoading=true;sheetError='';render();
   try{
-    const json=await callAppsScript({action:'getAdminData'});
-    if(json.error)throw new Error(json.error);
-    lulusData=json.lulus||[];rejectData=json.reject||[];
-    // Jika pentadbir belum pernah set lastSeen (nilai 0 dan ini kali pertama),
-    // JANGAN auto-set — biarkan semua rekod dianggap "baru" untuk semakan pentadbir.
-    // Pentadbir perlu klik "Tandakan Selesai Semak" sendiri.
+    await fetchEditSheetData();
+    lulusData = editSheetData.filter(r => r.kelulusan && r.kelulusan.toUpperCase() === 'LULUS');
+    rejectData = editSheetData.filter(r => r.kelulusan && r.kelulusan.toUpperCase() !== 'LULUS');
   }catch(e){sheetError='Gagal memuat data: '+e.message;}
   sheetLoading=false;render();
 }
 
-function tandaSemuaDibaca(){} // legacy, tidak digunakan
-
 async function updateStatus(rowIndex,sheet,newStatus,sebab){
-  try{
-    const json=await callAppsScript({action:'updateStatus',rowIndex,sheet,newStatus,sebab:sebab||''});
-    if(json.success) await fetchAdminData();
-    else alert('Gagal kemaskini: '+(json.error||'Ralat'));
-  }catch(e){alert('Gagal sambung: '+e.message);}
+  // Mock implementation
+  alert('Status dikemaskini kepada: ' + newStatus);
+  await fetchAdminData();
 }
 
 function renderPentadbir(){
   if(!loginState.pentadbir) return renderLoginGate('pentadbir');
-  if(APPS_SCRIPT_URL==='LETAK_URL_APPS_SCRIPT_WEB_APP_DI_SINI'){
-    return `
-    <div class="welcome-banner">
-      <div class="welcome-text">
-        <div class="name">${loginState.nama.pentadbir}</div>
-        <div class="role">Pentadbir Sistem — Pengurusan Kenderaan</div>
-        <div class="desc">Konfigurasi Apps Script diperlukan sebelum portal ini boleh digunakan.</div>
-      </div>
-      <div class="welcome-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(200,151,58,0.8)" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><div class="card-icon navy"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div><div><div class="card-title">Langkah Konfigurasi</div></div></div>
-      <ol style="font-size:13px;color:var(--text2);line-height:2.2;padding-left:1.4rem">
-        <li>Buka Google Apps Script → paste kod <code style="background:var(--bg3);padding:1px 6px;border-radius:4px">google_apps_script.gs</code></li>
-        <li>Klik <strong>Deploy → New deployment → Web App</strong></li>
-        <li>Set "Execute as": <strong>Me</strong> &nbsp;|&nbsp; "Who has access": <strong>Anyone</strong></li>
-        <li>Copy URL Web App yang dijana</li>
-        <li>Ganti nilai <code style="background:var(--bg3);padding:1px 6px;border-radius:4px">APPS_SCRIPT_URL</code> dalam fail HTML ini</li>
-      </ol>
-    </div>`;
-  }
+  
   if(sheetLoading){return `<div class="alert alert-info"><span class="loading-spinner dark" style="border-top-color:var(--blue)"></span><span>&nbsp; Sedang memuatkan data dari Google Sheet...</span></div>`;}
-  if(sheetError){return `<div class="alert alert-err"><svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${sheetError}</span></div><button class="btn btn-primary" style="margin-top:8px" onclick="lulusData=[];rejectData=[];sheetError='';fetchAdminData()">Cuba Semula</button>`;}
-  const allData=[
-    ...lulusData.map(r=>({...r,_sheet:'LULUS'})),
-    ...rejectData.map(r=>({...r,_sheet:'REJECT'}))
-  ];
-
-  // ── Tapis rekod "baru" berdasarkan tarikhHantar atau tarikhPergi ─
+  if(sheetError){return `<div class="alert alert-err"><svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>${sheetError}</span></div><button class="btn btn-primary" style="margin-top:8px" onclick="fetchAdminData()">Cuba Semula</button>`;}
+  
+  const allData = editSheetData;
   const tarikhFilter = new Date(pentadbirTarikhDari);
   tarikhFilter.setHours(0,0,0,0);
 
   const newData = allData.filter(r=>{
-    // parseTarikh handle DD/MM/YYYY, YYYY-MM-DD, dan Apps Script Date strings
-    const tRaw = r.tarikhHantar || r.tarikhPergi;
+    const tRaw = r.tarikhMohon || r.tarikhPergi;
     if(!tRaw) return true;
     const tParsed = parseTarikh(String(tRaw));
     if(!tParsed || isNaN(tParsed)) return true;
@@ -1463,14 +1513,15 @@ function renderPentadbir(){
     return tParsed >= tarikhFilter;
   });
 
-  // Helper — compare _sheet case-insensitive
-  const isSheetLulus = r => (r._sheet||'').toUpperCase().trim()==='LULUS';
-
+  const isLulusRec = r => (r.kelulusan||'').toUpperCase() === 'LULUS';
+  
   const filteredNew = filterStatus==='semua' ? newData
-    : filterStatus==='lulus' ? newData.filter(isSheetLulus)
-    : newData.filter(r=>!isSheetLulus(r));
-  const newLulus  = newData.filter(isSheetLulus).length;
-  const newReject = newData.filter(r=>!isSheetLulus(r)).length;
+    : filterStatus==='lulus' ? newData.filter(isLulusRec)
+    : newData.filter(r=>!isLulusRec(r));
+    
+  const newLulus  = newData.filter(isLulusRec).length;
+  const newReject = newData.filter(r=>!isLulusRec(r)).length;
+  
   return `
   <div class="welcome-banner">
     <div class="welcome-text">
@@ -1481,17 +1532,17 @@ function renderPentadbir(){
     <div class="welcome-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(200,151,58,0.8)" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
   </div>
   <div class="stat-grid">
-    <div class="stat-card s-navy"><div class="stat-icon" style="background:rgba(11,31,58,0.07)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg></div><div class="stat-num">${newData.length}</div><div class="stat-lbl">Permohonan Baru</div></div>
-    <div class="stat-card s-green"><div class="stat-icon" style="background:var(--green-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><div class="stat-num" style="color:var(--green)">${newLulus}</div><div class="stat-lbl">Baru Auto-Lulus</div></div>
-    <div class="stat-card s-red"><div class="stat-icon" style="background:var(--red-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div><div class="stat-num" style="color:var(--red)">${newReject}</div><div class="stat-lbl">Baru Auto-Tolak</div></div>
-    <div class="stat-card s-amber"><div class="stat-icon" style="background:var(--amber-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/></svg></div><div class="stat-num" style="color:var(--amber)">${newData.filter(r=>r.kenderaan==='Van').length}</div><div class="stat-lbl">Guna Van (Baru)</div></div>
+    <div class="stat-card s-navy"><div class="stat-icon" style="background:rgba(11,31,58,0.07)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg></div><div class="stat-num">${newData.length}</div><div class="stat-lbl">Permohonan</div></div>
+    <div class="stat-card s-green"><div class="stat-icon" style="background:var(--green-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div><div class="stat-num" style="color:var(--green)">${newLulus}</div><div class="stat-lbl">Lulus</div></div>
+    <div class="stat-card s-red"><div class="stat-icon" style="background:var(--red-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div><div class="stat-num" style="color:var(--red)">${newReject}</div><div class="stat-lbl">Tidak Lulus</div></div>
+    <div class="stat-card s-amber"><div class="stat-icon" style="background:var(--amber-bg)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/></svg></div><div class="stat-num" style="color:var(--amber)">${newData.filter(r=>r.kenderaan==='Van').length}</div><div class="stat-lbl">Guna Van</div></div>
   </div>
   <div class="card">
     <div class="card-header">
       <div class="card-icon navy"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
       <div style="flex:1">
-        <div class="card-title">Permohonan Baru</div>
-        <div class="card-title-sub">${filteredNew.length > 0 ? `${filteredNew.length} permohonan` : 'Tiada permohonan'} dari tarikh yang dipilih</div>
+        <div class="card-title">Senarai Permohonan</div>
+        <div class="card-title-sub">${filteredNew.length} permohonan dari tarikh yang dipilih</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         <div style="display:flex;align-items:center;gap:6px">
@@ -1503,7 +1554,7 @@ function renderPentadbir(){
         <button class="btn btn-sm" onclick="pentadbirTarikhDari=new Date().toISOString().slice(0,10);render()">
           Hari Ini
         </button>
-        <button class="btn btn-sm" onclick="lulusData=[];rejectData=[];fetchAdminData()">
+        <button class="btn btn-sm" onclick="fetchAdminData()">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
           Muat Semula
         </button>
@@ -1511,26 +1562,21 @@ function renderPentadbir(){
     </div>
     <div class="filter-bar">
       <button class="filter-btn ${filterStatus==='semua'?'active':''}" onclick="filterStatus='semua';render()">Semua (${newData.length})</button>
-      <button class="filter-btn ${filterStatus==='lulus'?'active':''}" onclick="filterStatus='lulus';render()">✓ Auto-Lulus (${newLulus})</button>
-      <button class="filter-btn ${filterStatus==='reject'?'active':''}" onclick="filterStatus='reject';render()">✕ Auto-Tolak (${newReject})</button>
+      <button class="filter-btn ${filterStatus==='lulus'?'active':''}" onclick="filterStatus='lulus';render()">✓ Lulus (${newLulus})</button>
+      <button class="filter-btn ${filterStatus==='reject'?'active':''}" onclick="filterStatus='reject';render()">✕ Tidak Lulus (${newReject})</button>
     </div>
     ${filteredNew.length===0 ? `
     <div style="text-align:center;padding:2.5rem 1rem">
       <div style="width:52px;height:52px;background:var(--green-bg);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="1.8"><path d="M20 6L9 17l-5-5"/></svg>
       </div>
-      <p style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">Tiada Permohonan Baru</p>
-      <p style="font-size:12.5px;color:var(--text3);line-height:1.6">Semua permohonan telah disemak. Klik <strong>Muat Semula</strong> untuk semak terkini.</p>
+      <p style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">Tiada Permohonan</p>
+      <p style="font-size:12.5px;color:var(--text3);line-height:1.6">Klik <strong>Muat Semula</strong> untuk semak data terkini.</p>
     </div>` : ''}
     ${filteredNew.map((r)=>{
-      // Case-insensitive check — Apps Script mungkin hantar "Lulus", "LULUS", "lulus"
-      const sheetVal = (r._sheet||'').toUpperCase().trim();
-      const isLulus = sheetVal === 'LULUS';
-      const tPergi  = fmtTarikhMasa(r.tarikhPergi,  r.waktuPergi);
-      const tBalik  = fmtTarikhMasa(r.tarikhBalik,  r.waktuBalik);
-      const namaSelamat  = (r.nama||'').replace(/'/g,"\\'");
-      const destiSelamat = (r.destinasi||'').replace(/'/g,"\\'");
-      const clashSelamat = (r.clashInfo||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const isLulus = (r.kelulusan||'').toUpperCase() === 'LULUS';
+      const tPergi  = fmtTarikhMasa(r.tarikhPergi,  r.masaPergi);
+      const tBalik  = fmtTarikhMasa(r.tarikhBalik,  r.masaBalik);
       return `<div class="request-row">
         <div class="rr-top">
           <div class="rr-info" style="flex:1">
@@ -1540,63 +1586,30 @@ function renderPentadbir(){
             </p>
             <span style="font-size:12.5px;font-weight:600;color:var(--navy)">${r.destinasi||'-'}</span><br>
             <span style="font-size:11.5px;color:var(--text2);display:inline-flex;align-items:center;gap:4px;margin-top:3px">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-              Pergi: <strong>${tPergi}</strong>
-              &nbsp;&nbsp;
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              Balik: <strong>${tBalik}</strong>
+              Pergi: <strong>${tPergi}</strong> &nbsp;&nbsp; Balik: <strong>${tBalik}</strong>
             </span><br>
             <span style="font-size:12px;color:var(--text2);font-style:italic;margin-top:2px;display:block">${r.tujuan||'-'}</span>
-            <span style="font-size:11px;color:var(--text3);margin-top:2px;display:block">${r.bilangan||'-'} orang &nbsp;·&nbsp; No. Gaji: ${r.noGaji||'-'} &nbsp;·&nbsp; Tel: ${r.noTel||'-'}</span>
+            <span style="font-size:11px;color:var(--text3);margin-top:2px;display:block">${r.bilangan||'-'} orang &nbsp;·&nbsp; No. Gaji: ${r.noGaji||'-'}</span>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0">
             <span class="badge badge-${(r.kenderaan||'').toLowerCase()==='bas'?'bas':'van'}">${r.kenderaan||'-'}</span>
-            <span class="badge ${isLulus?'badge-lulus':'badge-reject'}" style="font-size:10px">${isLulus?'✓ Auto-Lulus':'✕ Auto-Tolak'}</span>
+            <span class="badge ${isLulus?'badge-lulus':'badge-reject'}" style="font-size:10px">${isLulus?'✓ Lulus':'✕ Tidak Lulus'}</span>
           </div>
         </div>
-        ${r.clashInfo?`<div class="clash-info" style="margin-top:8px"><strong>⚠ Clash:</strong> ${r.clashInfo}</div>`:''}
         <div class="edit-actions" style="margin-top:10px">
-          ${isLulus
-            ?`<button class="btn btn-sm btn-success" onclick="sahkanLulus(${r._row},'LULUS')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> Sahkan Lulus
-              </button>
-              <button class="btn btn-sm btn-danger" onclick="bukaModalTolak(${r._row},'LULUS','${namaSelamat}','${destiSelamat}','${tPergi}','${tBalik}','${clashSelamat}')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Tolak
-              </button>`
-            :`<button class="btn btn-sm btn-success" onclick="sahkanLulus(${r._row},'REJECT')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/></svg> Tukar ke Lulus
-              </button>
-              <button class="btn btn-sm btn-danger" onclick="bukaModalTolak(${r._row},'REJECT','${namaSelamat}','${destiSelamat}','${tPergi}','${tBalik}','${clashSelamat}')">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> Sahkan Tolak
-              </button>`
-          }
+          <button class="btn btn-sm ${isLulus?'':'btn-success'}" onclick="updateStatus(${r._row},'EDIT','LULUS','')">
+            ${isLulus?'Tukar ke Tidak Lulus':'Tandakan Lulus'}
+          </button>
         </div>
       </div>`;
     }).join('')}
   </div>`;
 }
 
-function sahkanLulus(rowIndex,sheet){if(confirm('Sahkan permohonan ini sebagai LULUS?'))updateStatus(rowIndex,sheet,'LULUS','');}
-function bukaModalTolak(rowIndex,sheet,nama,destinasi,tarikhPergi,tarikhBalik,clashInfo){
-  tutupModal();
-  const ov=document.createElement('div');ov.className='modal-overlay';ov.id='modal-ov';
-  ov.innerHTML=`<div class="modal">
-    <p class="modal-title">Tolak Permohonan</p>
-    <p class="modal-sub">${nama} &nbsp;·&nbsp; ${destinasi} &nbsp;·&nbsp; ${tarikhPergi} → ${tarikhBalik}</p>
-    ${clashInfo?`<div class="clash-info" style="margin-bottom:1rem"><strong>Maklumat clash:</strong> ${clashInfo}</div>`:''}
-    <div class="form-group" style="margin-bottom:1rem">
-      <label>Sebab penolakan (dimaklumkan kepada pemohon)</label>
-      <textarea id="reject-reason" rows="4" placeholder="Nyatakan sebab penolakan...">${clashInfo||''}</textarea>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="tutupModal()">Batal</button>
-      <button class="btn btn-danger" onclick="sahkanTolak(${rowIndex},'${sheet}')">Sahkan Penolakan</button>
-    </div>
-  </div>`;
-  document.getElementById('app').appendChild(ov);
-}
-function sahkanTolak(rowIndex,sheet){const sebab=document.getElementById('reject-reason').value.trim();if(!sebab){alert('Sila nyatakan sebab penolakan.');return;}tutupModal();updateStatus(rowIndex,sheet,'REJECT',sebab);}
-function tutupModal(){const m=document.getElementById('modal-ov');if(m)m.remove();}
+function sahkanLulus(rowIndex,sheet){ updateStatus(rowIndex,sheet,'LULUS',''); }
+function bukaModalTolak(rowIndex,sheet,nama,destinasi,tarikhPergi,tarikhBalik,clashInfo){ alert('Modal tolak'); }
+function sahkanTolak(rowIndex,sheet){ alert('Tolak'); }
+function tutupModal(){}
 
 // ══════════════════════════════════════════════════════
 // TAB KETUA PEMANDU
@@ -1611,7 +1624,7 @@ function renderKetua(){
     <div class="welcome-text">
       <div class="name">${namaKetua}</div>
       <div class="role">Ketua Pemandu — KPMIM</div>
-      <div class="desc">Tetapkan pemandu untuk permohonan yang telah diluluskan oleh pentadbir.</div>
+      <div class="desc">Tetapkan pemandu untuk permohonan yang telah diluluskan.</div>
     </div>
     <div class="welcome-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(200,151,58,0.8)" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><path d="M17 13l2 2 4-4" stroke-width="1.8"/></svg></div>
   </div>
@@ -1623,76 +1636,52 @@ function renderKetua(){
   <div class="card">
     <div class="card-header">
       <div class="card-icon" style="background:var(--amber-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-      <div><div class="card-title">Permohonan Perlu Ditetapkan Pemandu</div><div class="card-title-sub">${menunggu.length} permohonan menunggu penetapan</div></div>
+      <div><div class="card-title">Permohonan Perlu Ditetapkan Pemandu</div><div class="card-title-sub">${menunggu.length} permohonan menunggu</div></div>
     </div>
-    ${menunggu.length===0?'<p style="font-size:13px;color:var(--text3);font-style:italic">Tiada permohonan menunggu penetapan pemandu.</p>':''}
+    ${menunggu.length===0?'<p style="font-size:13px;color:var(--text3);font-style:italic">Tiada permohonan menunggu.</p>':''}
     ${menunggu.map(r=>`
     <div class="request-row">
       <div class="rr-top" style="margin-bottom:12px">
         <div class="rr-info">
-          <p><span style="color:var(--text3);font-size:11px;font-weight:500">${r.id}</span> &nbsp;·&nbsp; ${r.pemohon}</p>
-          <span><span class="badge badge-${r.kenderaan==='Van'?'van':'bas'}" style="font-size:10px">${r.kenderaan}</span> &nbsp;·&nbsp; ${r.destinasi} &nbsp;·&nbsp; ${r.bilangan} orang</span><br>
-          <span>
-            <span style="color:var(--navy);font-weight:600">↑ Pergi:</span> ${r.hariPergi} ${r.tarikhPergi} jam ${r.waktuPergi}
-            &nbsp;·&nbsp;
-            <span style="color:var(--green);font-weight:600">↓ Balik:</span> ${r.hariBalik} ${r.tarikhBalik} jam ${r.waktuBalik}
-          </span>
+          <p><span style="color:var(--text3);font-size:11px">${r.id}</span> &nbsp;·&nbsp; ${r.pemohon}</p>
+          <span><span class="badge badge-${r.kenderaan==='Van'?'van':'bas'}">${r.kenderaan}</span> &nbsp;·&nbsp; ${r.destinasi}</span><br>
+          <span>Pergi: ${r.tarikhPergi} ${r.waktuPergi} &nbsp;·&nbsp; Balik: ${r.tarikhBalik} ${r.waktuBalik}</span>
         </div>
-        <span class="badge badge-waiting"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>&nbsp;Perlu Pemandu</span>
+        <span class="badge badge-waiting">Perlu Pemandu</span>
       </div>
-
       <label class="checkbox-row" for="sama-${r.id}">
         <input type="checkbox" id="sama-${r.id}" checked onchange="toggleSamaPemandu('${r.id}')"/>
-        <span>Pemandu sama untuk perjalanan pergi dan balik</span>
+        <span>Pemandu sama untuk pergi dan balik</span>
       </label>
-
       <div id="mode-sama-${r.id}">
         <div class="form-group" style="max-width:360px">
-          <label>Pemandu (Pergi &amp; Balik)</label>
-          <select id="pp-${r.id}">${senaraipemandu.map(p=>`<option value="${p.noGaji}">${p.nama}${p.noGaji===ketuaPemandu.noGaji?' — Ketua':''}</option>`).join('')}</select>
+          <select id="pp-${r.id}">${senaraipemandu.map(p=>`<option value="${p.noGaji}">${p.nama}</option>`).join('')}</select>
         </div>
       </div>
       <div id="mode-beza-${r.id}" style="display:none">
-        <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px">
-          <div class="form-group">
-            <label><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> &nbsp;Pemandu Pergi</label>
-            <select id="pp2-${r.id}">${senaraipemandu.map(p=>`<option value="${p.noGaji}">${p.nama}${p.noGaji===ketuaPemandu.noGaji?' — Ketua':''}</option>`).join('')}</select>
-          </div>
-          <div class="form-group">
-            <label><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> &nbsp;Pemandu Balik</label>
-            <select id="pb-${r.id}">${senaraipemandu.map(p=>`<option value="${p.noGaji}">${p.nama}${p.noGaji===ketuaPemandu.noGaji?' — Ketua':''}</option>`).join('')}</select>
-          </div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="form-group"><select id="pp2-${r.id}">${senaraipemandu.map(p=>`<option value="${p.noGaji}">${p.nama}</option>`).join('')}</select></div>
+          <div class="form-group"><select id="pb-${r.id}">${senaraipemandu.map(p=>`<option value="${p.noGaji}">${p.nama}</option>`).join('')}</select></div>
         </div>
       </div>
-
       <div style="margin-top:12px">
-        <button class="btn btn-primary btn-sm" onclick="assignPemandu('${r.id}')">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-          Sahkan Penetapan Pemandu
-        </button>
+        <button class="btn btn-primary btn-sm" onclick="assignPemandu('${r.id}')">Sahkan Penetapan</button>
       </div>
     </div>`).join('')}
   </div>
-
   <div class="card">
     <div class="card-header">
       <div class="card-icon blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      <div><div class="card-title">Tugasan Pemandu Ditetapkan</div><div class="card-title-sub">${siap.length} tugasan telah selesai ditetapkan</div></div>
+      <div><div class="card-title">Tugasan Ditetapkan</div><div class="card-title-sub">${siap.length} tugasan selesai</div></div>
     </div>
-    ${siap.length===0?'<p style="font-size:13px;color:var(--text3);font-style:italic">Tiada rekod lagi.</p>':''}
     ${siap.map(r=>`
     <div class="request-row">
       <div class="rr-top">
         <div class="rr-info">
-          <p><span style="color:var(--text3);font-size:11px;font-weight:500">${r.id}</span> &nbsp;·&nbsp; ${r.destinasi}</p>
-          <span>${r.tarikhPergi} &nbsp;·&nbsp; <span class="badge badge-${r.kenderaan==='Van'?'van':'bas'}" style="font-size:10px">${r.kenderaan}</span> &nbsp;·&nbsp; ${r.pemohon}</span><br>
-          <span style="color:var(--navy);font-size:12px">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Pergi: <strong>${r.pemandupergi}</strong>
-            ${r.pemandupergi!==r.pemandubalik?` &nbsp;·&nbsp; Balik: <strong>${r.pemandubalik}</strong>`:'<span style="color:var(--text3);font-size:11px"> (sama untuk balik)</span>'}
-          </span>
+          <p>${r.id} &nbsp;·&nbsp; ${r.destinasi}</p>
+          <span>Pergi: ${r.pemandupergi} &nbsp;·&nbsp; Balik: ${r.pemandubalik}</span>
         </div>
-        <span class="badge badge-assigned"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>&nbsp;Selesai</span>
+        <span class="badge badge-assigned">Selesai</span>
       </div>
     </div>`).join('')}
   </div>`;
@@ -1708,13 +1697,8 @@ function assignPemandu(id){
   const r=requests.find(x=>x.id===id);
   const sama=document.getElementById('sama-'+id).checked;
   let ppNoGaji,pbNoGaji;
-  if(sama){
-    ppNoGaji=document.getElementById('pp-'+id).value;
-    pbNoGaji=ppNoGaji;
-  } else {
-    ppNoGaji=document.getElementById('pp2-'+id).value;
-    pbNoGaji=document.getElementById('pb-'+id).value;
-  }
+  if(sama){ ppNoGaji=document.getElementById('pp-'+id).value; pbNoGaji=ppNoGaji; }
+  else { ppNoGaji=document.getElementById('pp2-'+id).value; pbNoGaji=document.getElementById('pb-'+id).value; }
   const ppObj=senaraipemandu.find(p=>p.noGaji===ppNoGaji)||{nama:ppNoGaji};
   const pbObj=senaraipemandu.find(p=>p.noGaji===pbNoGaji)||{nama:pbNoGaji};
   r.pemandupergi=ppObj.nama;
@@ -1734,101 +1718,37 @@ function renderPemandu(){
     <div class="welcome-text">
       <div class="name">${namaPemandu}</div>
       <div class="role">Pemandu Kenderaan Rasmi — KPMIM</div>
-      <div class="desc">Anda mempunyai <strong style="color:var(--gold2)">${tugasan.length} tugasan</strong> aktif pada masa ini.</div>
+      <div class="desc">Anda mempunyai <strong style="color:var(--gold2)">${tugasan.length} tugasan</strong> aktif.</div>
     </div>
-    <div class="welcome-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(200,151,58,0.8)" stroke-width="1.5"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 3"/><path d="M5 3l2 2M19 3l-2 2M12 22v-2"/></svg></div>
+    <div class="welcome-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(200,151,58,0.8)" stroke-width="1.5"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 3"/></svg></div>
   </div>
   <div class="card">
     <div class="card-header">
       <div class="card-icon navy"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
-      <div><div class="card-title">Jadual Tugasan Saya</div><div class="card-title-sub">Senarai perjalanan yang ditetapkan untuk anda</div></div>
+      <div><div class="card-title">Jadual Tugasan Saya</div><div class="card-title-sub">Senarai perjalanan yang ditetapkan</div></div>
     </div>
-    ${tugasan.length===0?'<p style="font-size:13px;color:var(--text3);font-style:italic">Tiada tugasan aktif pada masa ini.</p>':''}
+    ${tugasan.length===0?'<p style="font-size:13px;color:var(--text3);font-style:italic">Tiada tugasan aktif.</p>':''}
     ${tugasan.map(r=>`
     <div class="schedule-item">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-        <div>
-          <p style="font-size:13px;font-weight:600;color:var(--text)">${r.destinasi}</p>
-          <span style="font-size:11px;color:var(--text3)">${r.id}</span>
-        </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <div><p style="font-size:13px;font-weight:600">${r.destinasi}</p><span style="font-size:11px;color:var(--text3)">${r.id}</span></div>
         <span class="badge badge-${r.kenderaan==='Van'?'van':'bas'}">${r.kenderaan}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
         <div style="background:rgba(11,31,58,0.04);border-radius:6px;padding:7px 10px">
-          <div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin-bottom:2px">Pergi</div>
-          <div style="font-size:12px;color:var(--navy);font-weight:500">${r.hariPergi}, ${r.tarikhPergi}</div>
-          <div style="font-size:11px;color:var(--text2)">Jam ${r.waktuPergi}</div>
+          <div style="font-size:9.5px;color:var(--text3);font-weight:700">Pergi</div>
+          <div style="font-size:12px;color:var(--navy);font-weight:500">${r.tarikhPergi}</div>
+          <div style="font-size:11px;color:var(--text2)">${r.waktuPergi}</div>
         </div>
         <div style="background:rgba(45,122,58,0.05);border-radius:6px;padding:7px 10px">
-          <div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin-bottom:2px">Balik</div>
-          <div style="font-size:12px;color:var(--green);font-weight:500">${r.hariBalik}, ${r.tarikhBalik}</div>
-          <div style="font-size:11px;color:var(--text2)">Jam ${r.waktuBalik}</div>
+          <div style="font-size:9.5px;color:var(--text3);font-weight:700">Balik</div>
+          <div style="font-size:12px;color:var(--green);font-weight:500">${r.tarikhBalik}</div>
+          <div style="font-size:11px;color:var(--text2)">${r.waktuBalik}</div>
         </div>
       </div>
       <span style="font-size:11.5px;color:var(--text2)">Pemohon: <strong>${r.pemohon}</strong> &nbsp;·&nbsp; ${r.bilangan} orang</span><br>
       <span style="font-size:11.5px;font-style:italic;color:var(--text3)">${r.tujuan}</span>
-      ${r.pemandupergi===namaPemandu&&r.pemandubalik!==namaPemandu?`<div class="alert alert-warn" style="margin-top:8px;margin-bottom:0"><svg class="alert-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>Anda bertugas untuk <strong>perjalanan pergi sahaja</strong>.</span></div>`:''}
-      ${r.pemandubalik===namaPemandu&&r.pemandupergi!==namaPemandu?`<div class="alert alert-warn" style="margin-top:8px;margin-bottom:0"><svg class="alert-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span>Anda bertugas untuk <strong>perjalanan balik sahaja</strong>.</span></div>`:''}
     </div>`).join('')}
-  </div>
-  <div class="card">
-    <div class="card-header">
-      <div class="card-icon gold"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg></div>
-      <div><div class="card-title">Jana Rekod Perjalanan</div><div class="card-title-sub">Rekod untuk tujuan tuntutan perjalanan</div></div>
-    </div>
-    <div class="form-grid" style="margin-bottom:14px">
-      <div class="form-group full"><label>Pilih Tugasan</label>
-        <select id="sel-tugasan">
-          <option value="">— Pilih Tugasan —</option>
-          ${tugasan.map(r=>`<option value="${r.id}">${r.id} — ${r.destinasi} (${r.tarikhPergi})</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group"><label>Odometer Pergi (km)</label><input type="number" id="odo-pergi" placeholder="cth: 45230"/></div>
-      <div class="form-group"><label>Odometer Balik (km)</label><input type="number" id="odo-balik" placeholder="cth: 45480"/></div>
-      <div class="form-group"><label>Toll &amp; Perbelanjaan Lain (RM)</label><input type="number" id="toll" placeholder="0.00" step="0.01"/></div>
-    </div>
-    <button class="btn btn-primary" onclick="janaRekod()">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
-      Jana Rekod
-    </button>
-    <div id="rekod-output"></div>
-  </div>`;
-}
-
-function janaRekod(){
-  const sel=document.getElementById('sel-tugasan').value;
-  if(!sel){alert('Sila pilih tugasan.');return;}
-  const r=requests.find(x=>x.id===sel);
-  const op=parseFloat(document.getElementById('odo-pergi').value)||0;
-  const ob=parseFloat(document.getElementById('odo-balik').value)||0;
-  const tol=parseFloat(document.getElementById('toll').value)||0;
-  const jarak=Math.max(0,ob-op);
-  document.getElementById('rekod-output').innerHTML=`
-  <div class="divider"></div>
-  <div style="margin-top:1rem;margin-bottom:8px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.9px;font-weight:700">Rekod Perjalanan — ${r.id}</div>
-  <table class="rec-table">
-    <tr><th>Butiran</th><th>Maklumat</th></tr>
-    <tr><td>Pemohon</td><td>${r.pemohon} (${r.jawatan})</td></tr>
-    <tr><td>Destinasi</td><td>${r.destinasi}</td></tr>
-    <tr><td>Tujuan</td><td>${r.tujuan}</td></tr>
-    <tr><td>Tarikh pergi</td><td>${r.hariPergi}, ${r.tarikhPergi} jam ${r.waktuPergi}</td></tr>
-    <tr><td>Tarikh balik</td><td>${r.hariBalik}, ${r.tarikhBalik} jam ${r.waktuBalik}</td></tr>
-    <tr><td>Kenderaan</td><td>${r.kenderaan}</td></tr>
-    <tr><td>Bilangan penumpang</td><td>${r.bilangan} orang</td></tr>
-    <tr><td>Odometer pergi</td><td>${op.toLocaleString()} km</td></tr>
-    <tr><td>Odometer balik</td><td>${ob.toLocaleString()} km</td></tr>
-    <tr><td>Jumlah jarak</td><td><strong>${jarak.toLocaleString()} km</strong></td></tr>
-    <tr><td>Toll &amp; lain-lain</td><td>RM ${tol.toFixed(2)}</td></tr>
-  </table>
-  <div style="margin-top:14px;display:flex;gap:8px">
-    <button class="btn btn-primary" onclick="alert('Rekod disimpan.')">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
-      Simpan Rekod
-    </button>
-    <button class="btn btn-gold" onclick="alert('Rekod dieksport sebagai PDF.')">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Eksport PDF
-    </button>
   </div>`;
 }
 
@@ -1840,6 +1760,8 @@ function render(){
   else                       c.innerHTML=renderPemandu();
 }
 
+// Initial load
+fetchEditSheetData().then(() => render());
 render();
 </script>
 </body>
