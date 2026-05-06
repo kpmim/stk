@@ -720,6 +720,179 @@ textarea{resize:vertical;min-height:72px}
 }
 
 /* ═══════════════════════════════════════════════════
+   AUTH SCREEN — LOGIN / DAFTAR
+═══════════════════════════════════════════════════ */
+#auth-screen {
+  position:fixed;inset:0;z-index:9000;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(145deg,#060e1e 0%,#0B1F3A 40%,#112847 70%,#0a1628 100%);
+  overflow:hidden;
+  opacity:0;
+  visibility:hidden;
+  transition:opacity 0.6s ease, visibility 0.6s;
+}
+#auth-screen.show { opacity:1; visibility:visible; }
+#auth-screen.hide { opacity:0; visibility:hidden; pointer-events:none; }
+
+/* Auth background pattern */
+#auth-bg-hex {
+  position:absolute;inset:0;z-index:0;
+  opacity:0.5;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cpath d='M28 66L0 50V18L28 2l28 16v32L28 66zM28 100L0 84V52l28-16 28 16v32L28 100z' fill='none' stroke='rgba(200,151,58,0.05)' stroke-width='1'/%3E%3C/svg%3E");
+  background-size:56px 100px;
+}
+#auth-orb {
+  position:absolute;width:700px;height:700px;border-radius:50%;
+  background:radial-gradient(circle,rgba(200,151,58,0.12) 0%,rgba(200,151,58,0.04) 35%,transparent 65%);
+  top:50%;left:50%;transform:translate(-50%,-50%);z-index:0;
+  animation:authOrbPulse 5s ease-in-out infinite alternate;
+}
+@keyframes authOrbPulse{from{opacity:0.6;transform:translate(-50%,-50%) scale(0.95)}to{opacity:1;transform:translate(-50%,-50%) scale(1.05)}}
+#auth-line-bottom{
+  position:absolute;bottom:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,#c8973a,#f5c842,#c8973a,transparent);
+  box-shadow:0 0 15px rgba(200,151,58,0.6);z-index:1;
+}
+#auth-line-top{
+  position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(200,151,58,0.3),transparent);
+  z-index:1;
+}
+
+/* Auth card */
+.auth-card {
+  position:relative;z-index:10;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(200,151,58,0.2);
+  border-radius:24px;
+  padding:36px 32px 32px;
+  width:90%;max-width:420px;
+  box-shadow:0 30px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(200,151,58,0.1);
+  backdrop-filter:blur(20px);
+  animation:authCardIn 0.5s cubic-bezier(0.34,1.2,0.64,1) both;
+}
+@keyframes authCardIn{from{opacity:0;transform:translateY(30px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/* Auth header */
+.auth-logo-row {
+  display:flex;align-items:center;justify-content:center;flex-direction:column;
+  margin-bottom:28px;gap:8px;
+}
+.auth-logo-box {
+  width:52px;height:52px;
+  background:linear-gradient(145deg,var(--gold),var(--gold2));
+  border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 20px rgba(200,151,58,0.4);
+}
+.auth-title {
+  font-family:'Playfair Display',serif;
+  font-size:22px;font-weight:600;
+  background:linear-gradient(135deg,#fff8e0 0%,#f5c842 35%,#fff 55%,#e2b55a 75%,#c8973a 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  text-align:center;line-height:1.2;
+}
+.auth-subtitle {
+  font-size:11px;color:rgba(200,151,58,0.55);
+  letter-spacing:2.5px;text-transform:uppercase;
+  text-align:center;font-weight:500;margin-top:3px;
+}
+
+/* Auth tabs */
+.auth-tabs {
+  display:flex;background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:10px;margin-bottom:24px;overflow:hidden;
+}
+.auth-tab-btn {
+  flex:1;padding:9px;font-size:12.5px;font-weight:600;
+  font-family:'DM Sans',sans-serif;cursor:pointer;border:none;
+  background:transparent;color:rgba(255,255,255,0.4);
+  transition:all 0.2s;letter-spacing:0.2px;
+}
+.auth-tab-btn.active {
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  color:#fff;border-radius:8px;margin:3px;padding:6px;
+  box-shadow:0 2px 10px rgba(200,151,58,0.35);
+}
+
+/* Auth form fields */
+.auth-field {
+  margin-bottom:14px;
+}
+.auth-label {
+  display:block;font-size:10.5px;font-weight:700;
+  color:rgba(200,151,58,0.75);letter-spacing:0.5px;
+  text-transform:uppercase;margin-bottom:6px;
+}
+.auth-input {
+  width:100%;padding:10px 13px;
+  background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:9px;
+  font-size:13px;color:#fff;
+  font-family:'DM Sans',sans-serif;
+  transition:border-color 0.2s,background 0.2s,box-shadow 0.2s;
+  outline:none;
+}
+.auth-input::placeholder{color:rgba(255,255,255,0.25)}
+.auth-input:focus{
+  border-color:rgba(200,151,58,0.5);
+  background:rgba(200,151,58,0.07);
+  box-shadow:0 0 0 3px rgba(200,151,58,0.1);
+}
+.auth-input.uppercase{text-transform:uppercase}
+.auth-input option{background:#0B1F3A;color:#fff}
+
+/* Auth button */
+.auth-btn {
+  width:100%;padding:12px;margin-top:8px;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  border:none;border-radius:10px;
+  font-size:13.5px;font-weight:700;
+  font-family:'DM Sans',sans-serif;
+  color:#fff;cursor:pointer;
+  letter-spacing:0.3px;
+  box-shadow:0 4px 18px rgba(200,151,58,0.35);
+  transition:all 0.2s;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.auth-btn:hover{background:linear-gradient(135deg,#B5852E,var(--gold));transform:translateY(-1px);box-shadow:0 6px 22px rgba(200,151,58,0.45)}
+.auth-btn:active{transform:translateY(0)}
+.auth-btn:disabled{opacity:0.6;cursor:not-allowed;transform:none}
+
+/* Auth alert */
+.auth-alert {
+  margin-bottom:14px;padding:10px 13px;
+  border-radius:8px;font-size:12px;line-height:1.5;
+  display:flex;align-items:flex-start;gap:8px;
+}
+.auth-alert.err{background:rgba(176,40,40,0.15);border:1px solid rgba(176,40,40,0.3);color:#f5a5a5}
+.auth-alert.ok{background:rgba(45,122,58,0.15);border:1px solid rgba(45,122,58,0.3);color:#a5e0af}
+.auth-alert.info{background:rgba(26,95,168,0.15);border:1px solid rgba(26,95,168,0.3);color:#a5c8f5}
+
+/* Auth divider */
+.auth-divider{
+  display:flex;align-items:center;gap:10px;margin:18px 0 16px;
+}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:rgba(255,255,255,0.08)}
+.auth-divider span{font-size:10.5px;color:rgba(255,255,255,0.25);white-space:nowrap;letter-spacing:0.5px}
+
+/* Auth footer note */
+.auth-note{
+  text-align:center;font-size:10.5px;color:rgba(255,255,255,0.22);
+  margin-top:18px;line-height:1.6;
+}
+.auth-note strong{color:rgba(200,151,58,0.55)}
+
+/* Scroll on tall forms */
+.auth-form-scroll{max-height:60vh;overflow-y:auto;padding-right:2px;}
+.auth-form-scroll::-webkit-scrollbar{width:3px}
+.auth-form-scroll::-webkit-scrollbar-track{background:transparent}
+.auth-form-scroll::-webkit-scrollbar-thumb{background:rgba(200,151,58,0.3);border-radius:2px}
+
+/* ═══════════════════════════════════════════════════
    VEHICLE TRANSITION SCREEN
 ═══════════════════════════════════════════════════ */
 #vehicle-transition {
@@ -944,6 +1117,92 @@ textarea{resize:vertical;min-height:72px}
 </style>
 </head>
 <body>
+<!-- ═══════════════════════════════════════════════════
+     AUTH SCREEN — LOGIN & DAFTAR PENGGUNA
+═══════════════════════════════════════════════════ -->
+<div id="auth-screen">
+  <div id="auth-bg-hex"></div>
+  <div id="auth-orb"></div>
+  <div id="auth-line-top"></div>
+  <div id="auth-line-bottom"></div>
+
+  <div class="auth-card">
+    <div class="auth-logo-row">
+      <div class="auth-logo-box">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
+          <rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h3l3 3v5h-6V8z"/>
+          <circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+        </svg>
+      </div>
+      <div>
+        <div class="auth-title">Sistem Tempahan<br>Kenderaan KPMIM</div>
+        <div class="auth-subtitle">Masuk atau Daftar Akaun</div>
+      </div>
+    </div>
+
+    <!-- Tab Login / Daftar -->
+    <div class="auth-tabs">
+      <button class="auth-tab-btn active" id="auth-tab-login" onclick="authSwitchTab('login')">Log Masuk</button>
+      <button class="auth-tab-btn" id="auth-tab-daftar" onclick="authSwitchTab('daftar')">Daftar Baru</button>
+    </div>
+
+    <!-- Alert box -->
+    <div id="auth-alert" style="display:none" class="auth-alert"></div>
+
+    <!-- ── PANEL LOGIN ── -->
+    <div id="auth-panel-login">
+      <div class="auth-field">
+        <label class="auth-label">No. Gaji</label>
+        <input id="login-nogaji" class="auth-input" type="text" placeholder="cth: 229849" maxlength="20" oninput="authClearAlert()">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label">No. Telefon (kata laluan)</label>
+        <input id="login-notel" class="auth-input" type="tel" placeholder="cth: 0123456789" maxlength="15" oninput="authClearAlert()">
+      </div>
+      <button class="auth-btn" id="login-btn" onclick="handleLogin()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        Log Masuk
+      </button>
+      <div class="auth-note">Guna <strong>No. Telefon</strong> yang didaftarkan sebagai kata laluan.</div>
+    </div>
+
+    <!-- ── PANEL DAFTAR ── -->
+    <div id="auth-panel-daftar" style="display:none">
+      <div class="auth-form-scroll">
+        <div class="auth-field">
+          <label class="auth-label">Nama Penuh</label>
+          <input id="daftar-nama" class="auth-input uppercase" type="text" placeholder="Nama seperti dalam dokumen rasmi" oninput="this.value=this.value.toUpperCase();authClearAlert()">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label">Jawatan</label>
+          <input id="daftar-jawatan" class="auth-input uppercase" type="text" placeholder="cth: PENSYARAH KANAN DG52" oninput="this.value=this.value.toUpperCase();authClearAlert()">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label">Bahagian / Kategori</label>
+          <select id="daftar-bahagian" class="auth-input" onchange="authClearAlert()">
+            <option value="">-- Pilih Bahagian --</option>
+            <option value="Pentadbiran">Pentadbiran</option>
+            <option value="Akademik">Akademik</option>
+          </select>
+        </div>
+        <div class="auth-field">
+          <label class="auth-label">No. Gaji</label>
+          <input id="daftar-nogaji" class="auth-input" type="text" placeholder="cth: 229849" maxlength="20" oninput="authClearAlert()">
+        </div>
+        <div class="auth-field">
+          <label class="auth-label">No. Telefon (akan jadi kata laluan)</label>
+          <input id="daftar-notel" class="auth-input" type="tel" placeholder="cth: 0123456789" maxlength="15" oninput="authClearAlert()">
+        </div>
+      </div>
+      <button class="auth-btn" id="daftar-btn" onclick="handleDaftar()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+        Daftar Akaun
+      </button>
+      <div class="auth-note">Maklumat anda akan disimpan dalam sistem dan digunakan untuk proses tempahan.</div>
+    </div>
+  </div>
+</div>
+
 <div id="splash">
   <div id="sp-bg"></div>
   <div id="sp-hex"></div>
@@ -1410,7 +1669,7 @@ textarea{resize:vertical;min-height:72px}
     splash.classList.add('hide');
     setTimeout(function(){ if(splash.parentNode) splash.parentNode.removeChild(splash); },1100);
     // Start vehicle transition
-    setTimeout(startVehicleTransition, 400);
+    setTimeout(function(){ window.startVehicleTransition && window.startVehicleTransition(); }, 400);
   }
 
   window.skipSplash = exitSplash;
@@ -1453,10 +1712,14 @@ textarea{resize:vertical;min-height:72px}
       document.querySelectorAll('.vt-scenery').forEach(function(s){ s.style.animationPlayState='paused'; });
     }, 3050);
 
-    // Exit transition after text shown
+    // Exit transition after text shown → show auth screen
     setTimeout(function(){
       vt.classList.add('vt-hide');
-      setTimeout(function(){ if(vt.parentNode) vt.parentNode.removeChild(vt); }, 950);
+      setTimeout(function(){
+        if(vt.parentNode) vt.parentNode.removeChild(vt);
+        var authEl = document.getElementById('auth-screen');
+        if(authEl){ authEl.classList.remove('hide'); authEl.classList.add('show'); }
+      }, 950);
     }, 5200);
   }
 
@@ -1473,6 +1736,171 @@ textarea{resize:vertical;min-height:72px}
 
 // ══ KONFIGURASI ══
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw1PLyhnxgcT_XbpPyYmll3i53_1W8MpHGeF9E0nO3H1EHxOdJ7ycUuu0DCVoZwnfi0/exec';
+
+// ══════════════════════════════════════════════════════
+//  AUTH — LOGIN & DAFTAR PENGGUNA
+// ══════════════════════════════════════════════════════
+
+// Simpan user yang sedang log masuk
+let currentUser = null;
+
+function authSwitchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('auth-tab-login').classList.toggle('active', isLogin);
+  document.getElementById('auth-tab-daftar').classList.toggle('active', !isLogin);
+  document.getElementById('auth-panel-login').style.display = isLogin ? '' : 'none';
+  document.getElementById('auth-panel-daftar').style.display = isLogin ? 'none' : '';
+  authClearAlert();
+}
+
+function authShowAlert(msg, type) {
+  const el = document.getElementById('auth-alert');
+  el.className = 'auth-alert ' + (type || 'err');
+  el.innerHTML = msg;
+  el.style.display = 'flex';
+}
+
+function authClearAlert() {
+  document.getElementById('auth-alert').style.display = 'none';
+}
+
+function setAuthLoading(btnId, loading, txt) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? '<span class="loading-spinner"></span> Sila tunggu...'
+    : txt;
+}
+
+function callAppsScript(params) {
+  return new Promise(function(resolve, reject) {
+    const url = APPS_SCRIPT_URL + '?' + Object.keys(params).map(function(k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+
+    const cbName = '_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    params.callback = cbName;
+
+    const urlWithCb = APPS_SCRIPT_URL + '?' + Object.keys(params).map(function(k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+
+    const script = document.createElement('script');
+    script.src = urlWithCb;
+    let done = false;
+
+    window[cbName] = function(data) {
+      done = true;
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      resolve(data);
+    };
+    script.onerror = function() {
+      if (!done) { done = true; delete window[cbName]; reject(new Error('Network error')); }
+    };
+    setTimeout(function() {
+      if (!done) { done = true; delete window[cbName]; reject(new Error('Timeout')); }
+    }, 15000);
+    document.head.appendChild(script);
+  });
+}
+
+function handleLogin() {
+  const noGaji = (document.getElementById('login-nogaji').value || '').trim();
+  const noTel  = (document.getElementById('login-notel').value  || '').trim();
+
+  if (!noGaji || !noTel) {
+    authShowAlert('⚠️ Sila isi No. Gaji dan No. Telefon.', 'err');
+    return;
+  }
+
+  setAuthLoading('login-btn', true);
+  authClearAlert();
+
+  callAppsScript({ action: 'loginPengguna', noGaji: noGaji, noTel: noTel })
+    .then(function(res) {
+      setAuthLoading('login-btn', false, '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Log Masuk');
+      if (res && res.success) {
+        currentUser = res.pengguna;
+        authShowAlert('✅ Selamat datang, <strong>' + res.pengguna.nama + '</strong>!', 'ok');
+        setTimeout(function() { enterMainApp(res.pengguna); }, 800);
+      } else {
+        authShowAlert('❌ ' + (res && res.error ? res.error : 'Log masuk gagal. Semak no. gaji dan telefon.'), 'err');
+      }
+    })
+    .catch(function(err) {
+      setAuthLoading('login-btn', false, '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Log Masuk');
+      authShowAlert('⚠️ Gagal sambung ke pelayan. Cuba semula.', 'err');
+    });
+}
+
+function handleDaftar() {
+  const nama     = (document.getElementById('daftar-nama').value     || '').trim();
+  const jawatan  = (document.getElementById('daftar-jawatan').value  || '').trim();
+  const bahagian = (document.getElementById('daftar-bahagian').value || '').trim();
+  const noGaji   = (document.getElementById('daftar-nogaji').value   || '').trim();
+  const noTel    = (document.getElementById('daftar-notel').value    || '').trim();
+
+  if (!nama || !jawatan || !bahagian || !noGaji || !noTel) {
+    authShowAlert('⚠️ Sila lengkapkan semua maklumat sebelum mendaftar.', 'err');
+    return;
+  }
+  if (!/^\d{6,12}$/.test(noTel.replace(/[-\s]/g,''))) {
+    authShowAlert('⚠️ No. Telefon tidak sah. Masukkan nombor sahaja (6-12 digit).', 'err');
+    return;
+  }
+
+  setAuthLoading('daftar-btn', true);
+  authClearAlert();
+
+  callAppsScript({
+    action: 'daftarPengguna',
+    nama: nama, jawatan: jawatan, bahagian: bahagian,
+    noGaji: noGaji, noTel: noTel
+  })
+    .then(function(res) {
+      setAuthLoading('daftar-btn', false, '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg> Daftar Akaun');
+      if (res && res.success) {
+        authShowAlert('✅ Akaun berjaya didaftar! Sila log masuk.', 'ok');
+        setTimeout(function() { authSwitchTab('login'); document.getElementById('login-nogaji').value = noGaji; }, 1500);
+      } else {
+        authShowAlert('❌ ' + (res && res.error ? res.error : 'Pendaftaran gagal. Cuba semula.'), 'err');
+      }
+    })
+    .catch(function() {
+      setAuthLoading('daftar-btn', false, '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg> Daftar Akaun');
+      authShowAlert('⚠️ Gagal sambung ke pelayan. Cuba semula.', 'err');
+    });
+}
+
+function enterMainApp(pengguna) {
+  const authEl = document.getElementById('auth-screen');
+  if (authEl) authEl.classList.add('hide');
+
+  // Tentukan role berdasarkan no. gaji
+  const aksesInfo = AKSES[pengguna.noGaji];
+  if (aksesInfo) {
+    role = aksesInfo.tab;
+    if (role === 'pentadbir') { loginState.pentadbir = true; loginState.nama.pentadbir = aksesInfo.nama; }
+    else if (role === 'ketua') { loginState.ketua = true; loginState.nama.ketua = aksesInfo.nama; }
+    else if (role === 'pemandu') { loginState.pemandu = true; loginState.nama.pemandu = aksesInfo.nama; }
+  } else {
+    role = 'pemohon';
+    // Auto-isi maklumat pemohon dari akaun
+    window._authUserData = pengguna;
+  }
+
+  // Update tab visibility
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function(t) { t.classList.remove('active'); });
+  const activeTab = document.querySelector('.tab[onclick*="' + role + '"]');
+  if (activeTab) activeTab.classList.add('active');
+
+  fetchEditSheetData().then(function() { render(); });
+  render();
+}
+
 
 // URL untuk sheet "EDIT BY TPKP & EN AZMI"
 const SHEET_EDIT_URL = 'https://docs.google.com/spreadsheets/d/1yql5zFm8pbkkra7fqOvG-xy-cdw6EUWorhfrStJr03o/gviz/tq?tqx=out:json&gid=803195646';
@@ -2698,11 +3126,44 @@ function render(){
   else if(role==='pentadbir')c.innerHTML=renderPentadbir();
   else if(role==='ketua')    c.innerHTML=renderKetua();
   else                       c.innerHTML=renderPemandu();
+
+  // Auto-fill form pemohon dari data login
+  if(role==='pemohon' && window._authUserData && pemohonStep==='form'){
+    const u = window._authUserData;
+    const gajiEl = document.getElementById('f-gaji');
+    if(gajiEl && !gajiEl.value) {
+      gajiEl.value = u.noGaji || '';
+      // Trigger auto-fill
+      if(u.noGaji) {
+        _paparResultStaff({
+          found: true,
+          nama: u.nama,
+          jawatan: u.jawatan,
+          kategori: u.bahagian || u.kategori || '',
+          noTel: u.noTel
+        }, document.getElementById('staff-status'));
+      }
+    }
+  }
 }
 
-// Initial load
-fetchEditSheetData().then(() => render());
-render();
+// NOTE: Render akan dipanggil oleh enterMainApp selepas login berjaya.
+// Tidak perlu render awal kerana auth screen akan keluar dahulu.
+
+// ── FALLBACK: Pastikan auth screen keluar walaupun animation fail ──
+// Jika selepas 12s auth screen masih hidden, paksa tunjuk
+setTimeout(function(){
+  var authEl = document.getElementById('auth-screen');
+  if(authEl && !authEl.classList.contains('show')){
+    // Buang splash & vehicle transition kalau masih ada
+    var splash = document.getElementById('splash');
+    var vt = document.getElementById('vehicle-transition');
+    if(splash && splash.parentNode) splash.parentNode.removeChild(splash);
+    if(vt && vt.parentNode) vt.parentNode.removeChild(vt);
+    authEl.classList.remove('hide');
+    authEl.classList.add('show');
+  }
+}, 12000);
 </script>
 </body>
 </html>
