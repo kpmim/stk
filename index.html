@@ -770,9 +770,10 @@ textarea{resize:vertical;min-height:72px}
 ═══════════════════════════════════════════════════ */
 #auth-screen {
   position:fixed;inset:0;z-index:9000;
-  display:flex;align-items:center;justify-content:center;
+  display:flex;align-items:flex-start;justify-content:center;
   background:linear-gradient(145deg,#060e1e 0%,#0B1F3A 40%,#112847 70%,#0a1628 100%);
-  overflow:hidden;
+  overflow-y:auto;overflow-x:hidden;
+  padding:40px 0;
   opacity:0;
   visibility:hidden;
   transition:opacity 0.6s ease, visibility 0.6s;
@@ -933,7 +934,7 @@ textarea{resize:vertical;min-height:72px}
 .auth-note strong{color:rgba(200,151,58,0.55)}
 
 /* Scroll on tall forms */
-.auth-form-scroll{max-height:60vh;overflow-y:auto;padding-right:2px;}
+.auth-form-scroll{max-height:45vh;overflow-y:auto;padding-right:2px;}
 .auth-form-scroll::-webkit-scrollbar{width:3px}
 .auth-form-scroll::-webkit-scrollbar-track{background:transparent}
 .auth-form-scroll::-webkit-scrollbar-thumb{background:rgba(200,151,58,0.3);border-radius:2px}
@@ -1221,7 +1222,7 @@ textarea{resize:vertical;min-height:72px}
         </div>
         <div class="auth-field">
           <label class="auth-label">Jawatan</label>
-          <input id="daftar-jawatan" class="auth-input uppercase" type="text" placeholder="cth: PENSYARAH KANAN DG52" oninput="this.value=this.value.toUpperCase();authClearAlert()">
+          <input id="daftar-jawatan" class="auth-input uppercase" type="text" placeholder="cth: PENSYARAH" oninput="this.value=this.value.toUpperCase();authClearAlert()">
         </div>
         <div class="auth-field">
           <label class="auth-label">Bahagian / Kategori</label>
